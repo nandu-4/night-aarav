@@ -1064,3 +1064,8 @@ Created `Downloads/nandini-Resume-Intern.tex` for the Caspian (Dunlin.ai) intern
 - Verified with `git check-ignore` that `backend/.env`, `backend/venv`, and `frontend/node_modules` are all ignored.
 
 **Not done (deliberately):** no commit was made and no GitHub remote added — first commit and GitHub publishing left to the user via VS Code's Source Control panel / "Publish Branch" button.
+
+**Follow-up (same day):** "Create a repo and commit all changes."
+- Unstaged `.claude/settings.local.json` (machine-specific Claude Code permissions) and added it to `.gitignore`.
+- Created the **initial commit** on `main`: `ae149a4` — 85 files, 18,364 insertions. Verified `backend/.env` is not in it.
+- GitHub publishing still requires the user's sign-in: **Source Control panel → "Publish Branch"** (choose private/public).

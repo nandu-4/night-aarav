@@ -1,0 +1,33 @@
+QUARTERLY SKILLS ASSESSMENT REPORT
+Assessor: L&D Team | Period: Q3 2026 | Confidential
+
+Subject: Priya Venkatesh
+Role: Data Analyst, Client Delivery
+Email: priya.venkatesh@centific.ai
+
+Background
+Priya has been with the delivery team for 18 months. Strong SQL and dashboarding
+skills (Tableau, Power BI). Consistently high QA scores on reporting work.
+
+Assessment Findings
+The upcoming European retail engagement (starting next quarter) requires every
+analyst touching customer data to demonstrate working knowledge of GDPR:
+lawful bases for processing, data subject rights, retention rules, and breach
+notification duties. Priya has never worked under a GDPR regime — her prior
+projects were all US-domestic. In the scenario exercise she could not identify
+which fields in a sample dataset constituted personal data under EU law, and
+was unfamiliar with the concept of a Data Protection Impact Assessment.
+
+Recommendation
+Priya needs structured GDPR training with a practical assessment component
+before she can be staffed on the European engagement. Target proficiency:
+able to independently classify personal data, apply retention rules, and
+escalate breaches correctly. Certification from a recognised GDPR body is
+required by the client contract.
+
+Secondary observation
+Her colleague Daniel Brooks (Data Engineer, daniel.brooks@centific.ai) supports
+the same engagement's pipelines. He has solid Python/Spark skills but no
+information-security management background; the client requires the data
+platform team to operate under an ISO 27001-aligned ISMS. Daniel should be
+assessed for ISO 27001 foundation training in the same cycle.

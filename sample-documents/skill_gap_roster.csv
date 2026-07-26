@@ -1,0 +1,5 @@
+Name,Role,Department,Email,Current Skills,Skill Gap,Target Proficiency,Required Certification Authority
+Ananya Rao,Data Annotator,Operations,ananya.rao@centific.ai,"Image labelling, QA review, basic Excel","Handling protected health information (PHI) in annotation workflows for a US healthcare client",Advanced,HIPAA
+Tomas Weber,Backend Engineer,Engineering,tomas.weber@centific.ai,"Python, PostgreSQL, REST APIs, Docker","Cloud security posture, IAM configuration and threat modelling for the AWS migration",Intermediate,AWS
+Grace Mensah,Project Coordinator,Delivery,grace.mensah@centific.ai,"Scheduling, stakeholder comms, Jira basics","Formal agile delivery methods — sprint planning, velocity tracking, retrospectives",Intermediate,PMI
+Hiroshi Tanaka,ML Engineer,AI Lab,hiroshi.tanaka@centific.ai,"PyTorch, model training, data pipelines","Detecting and mitigating demographic bias in production ML models",Advanced,

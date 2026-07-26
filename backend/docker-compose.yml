@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend   # folder that contains the backend Dockerfile
+      dockerfile: Dockerfile
+    container_name: tn_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://user:password@db:5432/postgres}
+      DEBUG: "false"
+    ports:
+      - "8000:8000"
+    networks:
+      - tn_network
+
+  frontend:
+    build:
+      context: ./frontend  # folder that contains the frontend Dockerfile + nginx.conf
+      dockerfile: Dockerfile
+    container_name: tn_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - tn_network
+
+networks:
+  tn_network:
+    driver: bridge

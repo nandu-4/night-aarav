@@ -1,0 +1,22 @@
+# Python
+backend/venv/
+backend/venv_broken/
+__pycache__/
+*.pyc
+
+# Secrets — never commit these
+.env
+*.env
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/test-results/
+
+# Misc
+*.zip
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json

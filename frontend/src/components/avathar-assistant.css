@@ -1,0 +1,148 @@
+/* ══════════════════════════════════════════════════════════
+   Avathar assistant — in-app, ChatGPT-style. No separate page:
+   commands open the app's REAL screens.
+   ══════════════════════════════════════════════════════════ */
+
+.ava-orb {
+  position: absolute; right: 26px; z-index: 3200;
+  width: 56px; height: 56px; border-radius: 50%; border: none; cursor: pointer;
+  background: linear-gradient(135deg, #7c4dff, #5929d0);
+  box-shadow: 0 8px 26px rgba(89, 41, 208, .55);
+  color: #fff; font-family: 'Poppins', sans-serif; font-weight: 800; font-size: 17px;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .18s, box-shadow .3s;
+}
+.ava-orb:hover { transform: scale(1.07); }
+.ava-orb--live { animation: avaPulse 1.6s ease-in-out infinite; }
+@keyframes avaPulse {
+  0%, 100% { box-shadow: 0 8px 26px rgba(89,41,208,.55); }
+  50%      { box-shadow: 0 8px 40px rgba(124,77,255,.95); }
+}
+
+/* ── Panel ── */
+.ava-panel {
+  position: absolute; right: 26px; z-index: 3300;
+  width: 392px; max-width: calc(100vw - 40px);
+  height: 680px; max-height: calc(100vh - 110px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 20px; border: 1px solid rgba(255,255,255,.12);
+  background: linear-gradient(165deg, rgba(19,16,51,.97), rgba(11,9,32,.97));
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 24px 70px rgba(0,0,0,.55);
+  font-family: 'Poppins', sans-serif; color: #eef0ff;
+  animation: avaIn .3s cubic-bezier(.16,1,.3,1);
+}
+@keyframes avaIn { from { opacity: 0; transform: translateY(16px) scale(.97); } to { opacity: 1; transform: none; } }
+
+.ava-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.ava-head__logo {
+  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+  background: linear-gradient(135deg, #7c4dff, #5929d0);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 14px; color: #fff;
+}
+.ava-head__name { font-size: 14px; font-weight: 700; line-height: 1.1; }
+.ava-head__state { font-size: 10px; color: rgba(238,240,255,.55); display: flex; align-items: center; gap: 5px; }
+.ava-head__state::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #6b7280; }
+.ava-head__state--listening::before { background: #34d399; box-shadow: 0 0 8px #34d399; }
+.ava-head__state--thinking::before  { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
+.ava-head__state--speaking::before  { background: #a78bfa; box-shadow: 0 0 8px #a78bfa; }
+.ava-head__close {
+  margin-left: auto; border: none; background: transparent; color: rgba(238,240,255,.6);
+  font-size: 15px; cursor: pointer; padding: 4px 8px; border-radius: 8px;
+}
+.ava-head__close:hover { background: rgba(255,255,255,.1); color: #fff; }
+
+/* ── the face stage (Avaturn 3D avatar, or SVG stand-in) ── */
+.ava-face-stage {
+  position: relative; flex-shrink: 0; height: 185px; overflow: hidden;
+  background:
+    radial-gradient(420px 240px at 50% 115%, rgba(124,77,255,.32), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,.02), rgba(0,0,0,.18));
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  transition: box-shadow .4s;
+}
+.ava-face-stage--speaking { box-shadow: inset 0 -26px 40px -28px rgba(124,77,255,.9); }
+.ava-face-stage--listening { box-shadow: inset 0 -26px 40px -28px rgba(52,211,153,.75); }
+.ava-face-stage--thinking { box-shadow: inset 0 -26px 40px -28px rgba(251,191,36,.6); }
+
+.ava-svgface { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.ava-svgface svg { width: 128px; height: 128px; filter: drop-shadow(0 0 22px rgba(124,77,255,.5)); animation: avaBreathe 4.4s ease-in-out infinite; }
+@keyframes avaBreathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+.ava-svgface__eyes ellipse { transform-origin: center; animation: avaBlink 5s infinite; }
+@keyframes avaBlink { 0%,94%,100%{transform:scaleY(1)} 96.5%{transform:scaleY(.08)} }
+.ava-svgface__mouth { transform-origin: 100px 129px; }
+.ava-svgface--speaking .ava-svgface__mouth { animation: avaTalk .27s ease-in-out infinite alternate; }
+@keyframes avaTalk { from { transform: scaleY(.6) scaleX(.85); } to { transform: scaleY(2.4) scaleX(1.08); } }
+.ava-svgface__hint { font-size: 9.5px; color: rgba(238,240,255,.42); text-align: center; padding: 0 20px; }
+
+/* command chips */
+.ava-cmds {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.07);
+}
+.ava-cmds button {
+  border: 1px solid rgba(124,77,255,.4); background: rgba(124,77,255,.12);
+  color: #c9b8ff; border-radius: 999px; padding: 4px 11px;
+  font-family: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  transition: background .2s;
+}
+.ava-cmds button:hover { background: rgba(124,77,255,.3); color: #fff; }
+
+/* messages */
+.ava-msgs { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ava-msg { max-width: 86%; padding: 9px 13px; border-radius: 14px; font-size: 12.5px; line-height: 1.55; }
+.ava-msg--you {
+  align-self: flex-end; color: #fff;
+  background: linear-gradient(135deg, #7c4dff, #5929d0);
+  border-bottom-right-radius: 4px;
+}
+.ava-msg--av {
+  align-self: flex-start; color: rgba(238,240,255,.94);
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.07);
+  border-bottom-left-radius: 4px;
+}
+.ava-msg--interim { opacity: .55; font-style: italic; }
+.ava-msg--action { border-color: rgba(52,211,153,.4); }
+.ava-msg__open { display: block; margin-top: 4px; font-size: 10.5px; color: #6ee7b7; }
+
+/* confirm bubble */
+.ava-confirm { align-self: stretch; border: 1px solid rgba(251,191,36,.45); border-radius: 14px; padding: 12px 14px; background: rgba(251,191,36,.08); }
+.ava-confirm b { font-size: 12.5px; }
+.ava-confirm p { margin: 3px 0 9px; font-size: 11.5px; color: rgba(238,240,255,.75); }
+.ava-confirm__row { display: flex; gap: 8px; }
+.ava-confirm__row button {
+  flex: 1; padding: 8px; border-radius: 10px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+}
+.ava-confirm__yes { background: linear-gradient(135deg, #34d399, #059669); color: #fff; }
+.ava-confirm__no  { background: rgba(255,255,255,.1); color: #fff; }
+
+/* input row */
+.ava-inrow {
+  display: flex; gap: 7px; padding: 11px 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.ava-mic {
+  width: 40px; height: 40px; border-radius: 12px; border: none; cursor: pointer; flex-shrink: 0;
+  background: rgba(124,77,255,.2); color: #c9b8ff; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .2s;
+}
+.ava-mic:hover { background: rgba(124,77,255,.4); }
+.ava-mic--on { background: linear-gradient(135deg, #ef4444, #b91c1c); color: #fff; animation: avaPulse 1.4s infinite; }
+.ava-inrow input {
+  flex: 1; min-width: 0; padding: 0 13px; border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.13); background: rgba(0,0,0,.3);
+  color: #fff; font-family: inherit; font-size: 12px; outline: none;
+}
+.ava-inrow input::placeholder { color: rgba(238,240,255,.38); }
+.ava-send {
+  width: 40px; height: 40px; border-radius: 12px; border: none; cursor: pointer; flex-shrink: 0;
+  background: linear-gradient(135deg, #7c4dff, #5929d0); color: #fff; font-size: 15px;
+}
+.ava-send:hover { filter: brightness(1.15); }

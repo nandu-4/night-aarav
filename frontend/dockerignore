@@ -1,0 +1,6 @@
+node_modules/   ← Node.js specific
+dist/           ← Vite build output
+.env / .env.*
+*.log
+.git/
+.gitignore

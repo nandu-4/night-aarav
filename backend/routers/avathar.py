@@ -24,12 +24,13 @@ Guardrails, unchanged in spirit:
     write anything.
 """
 
+import base64
 import difflib
 import re
 from typing import Optional, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -387,3 +388,49 @@ async def execute(payload: ExecuteRequest, db: AsyncSession = Depends(get_db)):
     else:
         speech = f"Done — {who}'s request is rejected and the assignment is cancelled."
     return _reply("executed", speech, view="open_screen", data={"screen": "hil", "result": result})
+
+
+@router.post("/transcribe")
+async def transcribe_audio(audio: UploadFile = File(...)):
+    """
+    Transcribe audio using Gemini — fallback for when Chrome's Web Speech API
+    cannot reach Google's servers (e.g. blocked by ISP/firewall).
+    Accepts audio/webm (MediaRecorder default in Chrome) and returns plain text.
+    """
+    if not settings.gemini_api_key:
+        return {"transcript": "", "error": "No Gemini API key configured."}
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return {"transcript": "", "error": "Empty audio"}
+
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    mime = audio.content_type or "audio/webm"
+
+    try:
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = genai.Client(api_key=settings.gemini_api_key)
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",  # use 1.5-flash — confirmed multimodal audio support
+            contents=[
+                genai_types.Content(parts=[
+                    genai_types.Part(
+                        inline_data=genai_types.Blob(mime_type=mime, data=audio_b64)
+                    ),
+                    genai_types.Part.from_text(
+                        "Transcribe exactly what is spoken in this audio clip. "
+                        "Return ONLY the spoken words — no punctuation corrections, "
+                        "no explanations, no quotation marks."
+                    ),
+                ])
+            ],
+            config=genai_types.GenerateContentConfig(temperature=0.0),
+        )
+        transcript = (response.text or "").strip()
+        print(f"[TRANSCRIBE] '{transcript[:80]}'")
+        return {"transcript": transcript}
+    except Exception as e:
+        print(f"[TRANSCRIBE] Error: {e}")
+        return {"transcript": "", "error": str(e)}

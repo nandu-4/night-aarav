@@ -78,6 +78,11 @@ export const api = {
   // ── Avathar (voice) ──
   avatharCommand: (transcript, history = []) => post('/avathar/command', { transcript, history }),
   avatharExecute: (action) => post('/avathar/execute', action),
+  transcribeAudio: (audioBlob) => {
+    const fd = new FormData();
+    fd.append('audio', audioBlob, 'recording.webm');
+    return upload('/avathar/transcribe', fd);
+  },
   meetings: () => get('/meetings'),
   startMeeting: (meet_url) => post('/meetings/start', { meet_url }),
   presentState: () => get('/meetings/present-state'),

@@ -1069,3 +1069,43 @@ Created `Downloads/nandini-Resume-Intern.tex` for the Caspian (Dunlin.ai) intern
 - Unstaged `.claude/settings.local.json` (machine-specific Claude Code permissions) and added it to `.gitignore`.
 - Created the **initial commit** on `main`: `ae149a4` — 85 files, 18,364 insertions. Verified `backend/.env` is not in it.
 - GitHub publishing still requires the user's sign-in: **Source Control panel → "Publish Branch"** (choose private/public).
+
+---
+
+### 2026-08-02 — **SkillForge**: the enterprise learning platform, built end-to-end 🔨
+
+**Asked:** Design and develop "SkillForge" — an enterprise Employee Learning & Skill Development Platform (Coursera-class UI, glassmorphism purple-teal) that acts as the official training portal downstream of the Talent Nurturing Agent. React + FastAPI + JWT + MongoDB, 4 roles, 3-stage learning journey, real-time sync, certificates, analytics — with TN as the source of truth and the Talent Lead keeping final authority.
+
+#### 🏗️ What was built (`skillforge/` — a full second application)
+
+**Backend** (FastAPI + MongoDB `sf_mongo` Docker + JWT, port **8100**):
+- `auth.py` — JWT (HS256, 12h) + PBKDF2 password hashing + role-based access control (employee / manager / lead read-only / admin)
+- `services/tn.py` — **the integration core**: every learning action is forwarded to TN's own `/learning/*` endpoints, so TN keeps grading tests, rolling up completion (BR-005), creating certification records and writing audit logs. SkillForge never grades, never completes, never decides deployment.
+- `services/portal.py` — employee accounts auto-seeded from TN's live roster (17 seeded), streaks, learning hours, explainable readiness score (60% progress / 25% assessments / 15% certs) — display-only, with the note that deployment is decided by the Talent Lead in TN
+- `routers/employee.py` — dashboard, courses, **3-stage journey enforced in order** (content → assessment → project; stages 2 and 3 are server-side gated), notes, bookmarks, activity log
+- `routers/certs.py` — auto-issued certificates with verification ID + HMAC digital signature, public `/certs/verify/{id}`, TN notified via audit trail
+- `routers/notify.py` — notifications (assignment, quiz results, project feedback, certificate, announcements broadcast)
+- `routers/manage.py` — manager: live employee overview (from TN), project submission reviews (mentor verdict + feedback → notification + TN audit); admin: user management, password resets, employee re-sync
+- `routers/analytics.py` — dept progress, completion breakdown, quiz distribution, learning velocity, activity heatmap, most-requested skills, leaderboard
+
+**Frontend** (React + Vite, port **5280**): glassmorphism design system (`theme.css`, dark/light), sidebar shell with per-role navigation + notification bell, login page, employee dashboard (hero card, readiness ring, streak/hours/certs, deadlines, recommended, activity timeline, announcements), **course player with the 3-stage rail** (locked stages show why), quiz with instant per-option feedback + score history, project submission (text + GitHub + file upload) with automated pre-review + mentor review timeline, certificate gallery + printable certificate document + public verification page, analytics with hand-rolled SVG charts (palette validated for both themes via the dataviz six-checks script: `#7c4dff / #0d9488 / #ef4444·#dc2626`), leaderboard, manager/admin consoles.
+
+#### ✅ End-to-end proof (Playwright, real data)
+
+Logged in as **Sana Iqbal** (`r-d72048@skillforge.dev`) and completed her Cloud Security Fast-Track entirely through SkillForge: ticked all 3 modules → passed the assessment 100% (graded by TN) → submitted the hands-on project. Then verified **on TN's side**: assignment **complete / 100% / test 100 / case submitted**, TN created the **AWS Cloud Practitioner certification — status `pending`** (Talent Lead verification, HIL intact), and TN's audit log records "SkillForge issued certificate SF-6D86A343…". Certificate visible in her gallery and publicly verifiable at `/verify/SF-6D86A343`.
+
+#### ▶️ Running it
+
+| Piece | Where | Start |
+|---|---|---|
+| Mongo | Docker `sf_mongo` :27017 | `docker start sf_mongo` |
+| Backend | http://127.0.0.1:8100 | `skillforge/backend: ./venv/Scripts/python -m uvicorn main:app --port 8100` |
+| Frontend | **http://localhost:5280** | `skillforge/frontend: npx vite --port 5280` |
+
+Logins (password `learn123`): employees `r-<code>@skillforge.dev` (e.g. `r-d72048@`), staff `manager@` / `lead@` / `admin@skillforge.dev`.
+
+---
+
+### 2026-08-02 — Question: how to log in to every account
+
+Listed all 20 seeded SkillForge accounts (from Mongo) with the shared default password `learn123`: staff (`admin@` / `manager@` / `lead@skillforge.dev`) + 17 employees as `r-<resource_code>@skillforge.dev` (e.g. Sana Iqbal = `r-d72048@`). Switch accounts via the ⎋ sign-out button. New TN-approved learners get accounts via Admin Console → "Sync employees now". No code changes.

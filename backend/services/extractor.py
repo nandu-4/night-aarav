@@ -1,15 +1,14 @@
 """
-Turns an uploaded skill-gap document into something Claude can read.
+Turns an uploaded skill-gap document into text the LLM can read.
 
-PDFs are passed through natively as a `document` content block — Claude reads
-the layout, tables and headings directly, which is far better than running our
-own text extraction and throwing the structure away.
+All formats (PDF, Excel, CSV, plain text) are converted to a text content
+block, since Groq / LLaMA models are text-only and cannot process binary
+files natively.
 
-Spreadsheets and CSVs are flattened to text here, because there is no native
-block type for them.
+PDFs are extracted via pdfplumber, which preserves tables and layout
+reasonably well. Spreadsheets and CSVs are flattened to pipe-delimited text.
 """
 
-import base64
 import csv
 import io
 
@@ -83,12 +82,25 @@ def _csv_to_text(data: bytes) -> str:
     return "\n".join(lines)
 
 
+def _pdf_to_text(data: bytes) -> str:
+    from pypdf import PdfReader
+
+    chunks: list[str] = []
+    reader = PdfReader(io.BytesIO(data))
+    for i, page in enumerate(reader.pages):
+        text = page.extract_text() or ""
+        if text.strip():
+            chunks.append(f"### Page {i + 1}")
+            chunks.append(text.strip())
+            chunks.append("")
+    return "\n".join(chunks)
+
+
 def to_content_block(filename: str, content_type: str | None, data: bytes) -> dict:
     """
-    Return a single Anthropic content block representing the uploaded document.
+    Return a single text content block representing the uploaded document.
 
-    PDFs become a native `document` block; everything else becomes a `text`
-    block wrapping the flattened contents.
+    All formats are converted to text since Groq / LLaMA models are text-only.
     """
     if not data:
         raise UnsupportedDocument("The uploaded file is empty.")
@@ -100,18 +112,8 @@ def to_content_block(filename: str, content_type: str | None, data: bytes) -> di
     kind = _kind(filename, content_type)
 
     if kind == "pdf":
-        return {
-            "type": "document",
-            "source": {
-                "type": "base64",
-                "media_type": "application/pdf",
-                # base64 payload must contain no newlines
-                "data": base64.standard_b64encode(data).decode("ascii"),
-            },
-            "title": filename or "skill-gap-document.pdf",
-        }
-
-    if kind == "excel":
+        body = _pdf_to_text(data)
+    elif kind == "excel":
         body = _excel_to_text(data)
     elif kind == "csv":
         body = _csv_to_text(data)

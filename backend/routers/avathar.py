@@ -26,6 +26,7 @@ Guardrails, unchanged in spirit:
 
 import base64
 import difflib
+import json
 import re
 from typing import Optional, Literal
 from uuid import UUID
@@ -132,7 +133,7 @@ async def _snapshot(db: AsyncSession) -> str:
 
 
 # ─────────────────────────────────────────────
-# The brain — Gemini chat with grounding + planned actions
+# The brain — Groq chat with grounding + planned actions
 # ─────────────────────────────────────────────
 
 SYSTEM = """You are Aarav, the voice assistant living inside a talent-nurturing application.
@@ -160,51 +161,61 @@ ACTIONS: Besides talking, you can act by setting `action`:
 Use action type "none" for pure conversation. Prefer acting when the user asks to see
 or do something; if you open a screen, mention it naturally in the reply.
 When a spoken name is garbled, match it to the closest real person in the data.
-Only decide (approve/reject) when the user clearly asks to."""
+Only decide (approve/reject) when the user clearly asks to.
+
+IMPORTANT: Your response must be a valid JSON object with two fields:
+- "reply": your spoken response as a string
+- "action": an object with fields "type", "screen" (optional), "person" (optional), "filter" (optional)"""
 
 
-_quota_block_until = 0.0  # circuit breaker: after a 429, skip Gemini for a while
+_quota_block_until = 0.0  # circuit breaker: after a 429, skip Groq for a while
 
 
-def _gemini_chat(message: str, history: list[ChatTurn], snapshot: str) -> AssistantReply | None:
+def _groq_chat(message: str, history: list[ChatTurn], snapshot: str) -> AssistantReply | None:
     global _quota_block_until
-    if not settings.gemini_api_key:
+    if not settings.groq_api_key:
         return None
     import time
     if time.time() < _quota_block_until:
         return None  # quota known to be exhausted — fall back instantly, no 4s wait
-    from google import genai
-    from google.genai import types as genai_types
+    from groq import Groq
 
-    client = genai.Client(api_key=settings.gemini_api_key)
-    contents = []
+    client = Groq(api_key=settings.groq_api_key)
+    messages = [
+        {"role": "system", "content": SYSTEM + "\n\n=== DATA ===\n" + snapshot},
+    ]
     for turn in history[-12:]:
-        contents.append(genai_types.Content(
-            role="user" if turn.role == "user" else "model",
-            parts=[genai_types.Part.from_text(text=turn.text)],
-        ))
-    contents.append(genai_types.Content(role="user", parts=[genai_types.Part.from_text(text=message)]))
+        messages.append({
+            "role": "user" if turn.role == "user" else "assistant",
+            "content": turn.text,
+        })
+    messages.append({"role": "user", "content": message})
 
     # one retry — free-tier bursts throw transient 429/5xx that shouldn't
     # drop the whole conversation into keyword-fallback mode
     for attempt in (1, 2):
         try:
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=contents,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=SYSTEM + "\n\n=== DATA ===\n" + snapshot,
-                    response_mime_type="application/json",
-                    response_schema=AssistantReply,
-                    temperature=0.4,
-                ),
+            response = client.chat.completions.create(
+                model=settings.groq_model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.4,
+                max_tokens=1000,
             )
-            parsed = getattr(response, "parsed", None)
-            if isinstance(parsed, AssistantReply):
+            raw_text = response.choices[0].message.content or ""
+            try:
+                parsed = AssistantReply.model_validate_json(raw_text)
                 return parsed
+            except Exception:
+                try:
+                    data = json.loads(raw_text)
+                    parsed = AssistantReply.model_validate(data)
+                    return parsed
+                except Exception:
+                    pass
         except Exception as e:
-            print(f"[AVATHAR] Gemini attempt {attempt} failed: {type(e).__name__}: {str(e)[:180]}")
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            print(f"[AVATHAR] Groq attempt {attempt} failed: {type(e).__name__}: {str(e)[:180]}")
+            if "429" in str(e) or "rate_limit" in str(e).lower():
                 _quota_block_until = time.time() + 120  # don't burn 4s per message on a dead quota
                 return None
             if attempt == 1:
@@ -213,7 +224,7 @@ def _gemini_chat(message: str, history: list[ChatTurn], snapshot: str) -> Assist
 
 
 def _fallback(text: str) -> AssistantReply:
-    """No API key / Gemini down: still navigate, tour, filter and decide via keywords."""
+    """No API key / Groq down: still navigate, tour, filter and decide via keywords."""
     t = text.lower()
 
     if re.search(r"\btour\b|walk ?through|show (me )?everything|present the app", t):
@@ -298,7 +309,7 @@ async def command(payload: CommandRequest, db: AsyncSession = Depends(get_db)):
         return _reply("none", "I didn't catch that — try again.")
 
     snapshot = await _snapshot(db)
-    ar = _gemini_chat(text, payload.history, snapshot) or _fallback(text)
+    ar = _groq_chat(text, payload.history, snapshot) or _fallback(text)
     action = ar.action or PlannedAction()
 
     # ── decisions: deterministic read-back + mandatory confirm ──
@@ -306,7 +317,7 @@ async def command(payload: CommandRequest, db: AsyncSession = Depends(get_db)):
         verb = "approve" if action.type == "approve_hil" else "reject"
         person, names = await _resolve_person(db, action.person)
         if not person:
-            hint = f"I couldn't match “{action.person}” to anyone. " if action.person else f"Whose request should I {verb}? "
+            hint = f"I couldn't match \u201c{action.person}\u201d to anyone. " if action.person else f"Whose request should I {verb}? "
             return _reply(action.type, hint + f"People I know: {', '.join(names[:8])}.")
 
         rows = await db.execute(
@@ -335,7 +346,7 @@ async def command(payload: CommandRequest, db: AsyncSession = Depends(get_db)):
     if action.type == "show_training":
         person, names = await _resolve_person(db, action.person)
         if not person:
-            hint = f"I couldn't find “{action.person}”. " if action.person else "Whose training? "
+            hint = f"I couldn't find \u201c{action.person}\u201d. " if action.person else "Whose training? "
             return _reply("none", hint + f"People I know: {', '.join(names[:8])}.")
         rows = await db.execute(
             _load_assignment()
@@ -393,42 +404,37 @@ async def execute(payload: ExecuteRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
     """
-    Transcribe audio using Gemini — fallback for when Chrome's Web Speech API
+    Transcribe audio using Groq's Whisper — fallback for when Chrome's Web Speech API
     cannot reach Google's servers (e.g. blocked by ISP/firewall).
     Accepts audio/webm (MediaRecorder default in Chrome) and returns plain text.
     """
-    if not settings.gemini_api_key:
-        return {"transcript": "", "error": "No Gemini API key configured."}
+    if not settings.groq_api_key:
+        return {"transcript": "", "error": "No Groq API key configured."}
 
     audio_bytes = await audio.read()
     if not audio_bytes:
         return {"transcript": "", "error": "Empty audio"}
 
-    audio_b64 = base64.b64encode(audio_bytes).decode()
-    mime = audio.content_type or "audio/webm"
-
     try:
-        from google import genai
-        from google.genai import types as genai_types
+        from groq import Groq
 
-        client = genai.Client(api_key=settings.gemini_api_key)
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",  # use 1.5-flash — confirmed multimodal audio support
-            contents=[
-                genai_types.Content(parts=[
-                    genai_types.Part(
-                        inline_data=genai_types.Blob(mime_type=mime, data=audio_b64)
-                    ),
-                    genai_types.Part.from_text(
-                        "Transcribe exactly what is spoken in this audio clip. "
-                        "Return ONLY the spoken words — no punctuation corrections, "
-                        "no explanations, no quotation marks."
-                    ),
-                ])
-            ],
-            config=genai_types.GenerateContentConfig(temperature=0.0),
-        )
-        transcript = (response.text or "").strip()
+        client = Groq(api_key=settings.groq_api_key)
+        # Groq has a Whisper endpoint for audio transcription
+        import tempfile, os
+        # Write audio to a temp file because Groq SDK expects a file object
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+            tmp.write(audio_bytes)
+            tmp_path = tmp.name
+        try:
+            with open(tmp_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-large-v3",
+                    file=audio_file,
+                    language="en",
+                )
+            transcript = transcription.text.strip()
+        finally:
+            os.unlink(tmp_path)
         print(f"[TRANSCRIBE] '{transcript[:80]}'")
         return {"transcript": transcript}
     except Exception as e:

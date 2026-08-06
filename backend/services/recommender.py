@@ -1,5 +1,5 @@
 """
-AI program recommendation — Google Gemini (AI Studio).
+AI program recommendation — Groq Cloud (LLaMA).
 
 Reads an uploaded skill-gap document and proposes a personalised training
 program per learner. Everything it produces is a *recommendation* — it is
@@ -14,18 +14,15 @@ Guardrails enforced here (not left to the prompt):
   * English output, UTC timestamps.
 """
 
-import base64
 import json
 from typing import Literal
 
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
+from groq import Groq, APIError as GroqAPIError
 from pydantic import BaseModel, Field
 
 from config import settings
 
-MODEL = settings.gemini_model          # default "gemini-2.5-flash"; override via GEMINI_MODEL in .env
+MODEL = settings.groq_model          # default "llama-3.3-70b-versatile"; override via GROQ_MODEL in .env
 
 
 class RecommenderUnavailable(Exception):
@@ -134,7 +131,9 @@ RULES — these are absolute:
 7. ONE ENTRY PER PERSON. If the document lists several people, return one candidate \
    per person. If it describes one person, return exactly one candidate.
 
-All output is in English.\
+All output is in English.
+
+IMPORTANT: Your response must be a valid JSON object matching the IntakeResult schema.\
 """
 
 
@@ -163,29 +162,36 @@ def _catalogue_prompt(programs: list[dict], question_bank_size: int) -> str:
     return "\n".join(lines)
 
 
-def _client() -> genai.Client:
-    key = settings.gemini_api_key
+def _client() -> Groq:
+    key = settings.groq_api_key
     if not key:
         raise RecommenderUnavailable(
-            "GEMINI_API_KEY is not set. Add it to backend/.env to enable AI recommendations."
+            "GROQ_API_KEY is not set. Add it to backend/.env to enable AI recommendations."
         )
-    return genai.Client(api_key=key)
+    return Groq(api_key=key)
 
 
-def _to_gemini_part(block: dict):
+def _document_to_text(block: dict) -> str:
     """
-    services.extractor produces Anthropic-style content blocks; translate them
-    to Gemini parts.
-      document (base64 PDF) -> Part.from_bytes (Gemini reads PDFs natively)
-      text                  -> plain text part
+    services.extractor produces Anthropic-style content blocks; convert them
+    to plain text for Groq (text-only LLM, no native PDF support).
+      document (base64 PDF) -> note that PDF was uploaded (content in text)
+      text                  -> plain text
     """
     if block.get("type") == "document":
-        src = block.get("source", {})
-        return genai_types.Part.from_bytes(
-            data=base64.standard_b64decode(src.get("data", "")),
-            mime_type=src.get("media_type", "application/pdf"),
-        )
-    return genai_types.Part.from_text(text=block.get("text", ""))
+        # PDF content — Groq/LLaMA can't read binary PDFs, so we note it.
+        # The text-based extraction path in extractor.py is preferred for Groq.
+        return f"[Uploaded PDF document: {block.get('title', 'document.pdf')}]\n(PDF binary content cannot be processed directly — use text/Excel/CSV upload for best results.)"
+    return block.get("text", "")
+
+
+# ──────────────────────────────────────────────────────────────
+# JSON schema for Groq structured output
+# ──────────────────────────────────────────────────────────────
+
+def _build_json_schema() -> dict:
+    """Build a JSON schema from the IntakeResult Pydantic model for Groq."""
+    return IntakeResult.model_json_schema()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -198,47 +204,55 @@ def recommend(document_block: dict, catalogue: list[dict], question_bank_size: i
     services.extractor. Returns a validated IntakeResult.
     """
     client = _client()
+    document_text = _document_to_text(document_block)
+    system_prompt = SYSTEM_RULES + "\n\n" + _catalogue_prompt(catalogue, question_bank_size)
+
+    user_message = (
+        document_text + "\n\n"
+        "Read this document. Identify every person with a skill gap, and "
+        "propose a personalised training program for each, drawn only from "
+        "the approved catalogue.\n\n"
+        "Respond with a JSON object matching the IntakeResult schema."
+    )
 
     try:
-        response = client.models.generate_content(
+        response = client.chat.completions.create(
             model=MODEL,
-            contents=[
-                _to_gemini_part(document_block),
-                (
-                    "Read this document. Identify every person with a skill gap, and "
-                    "propose a personalised training program for each, drawn only from "
-                    "the approved catalogue."
-                ),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
             ],
-            config=genai_types.GenerateContentConfig(
-                system_instruction=SYSTEM_RULES + "\n\n" + _catalogue_prompt(catalogue, question_bank_size),
-                response_mime_type="application/json",
-                response_schema=IntakeResult,
-            ),
+            response_format={"type": "json_object"},
+            temperature=0.3,
+            max_tokens=8000,
         )
-    except genai_errors.APIError as e:
-        code = getattr(e, "code", None)
-        if code in (401, 403):
+    except GroqAPIError as e:
+        status = getattr(e, "status_code", None)
+        if status in (401, 403):
             raise RecommenderUnavailable(
-                "Google AI Studio rejected the API key. Check GEMINI_API_KEY in backend/.env."
+                "Groq rejected the API key. Check GROQ_API_KEY in backend/.env."
             )
-        if code == 429:
+        if status == 429:
             raise RecommenderUnavailable(
-                "Gemini free-tier rate limit hit — wait a minute and try again."
+                "Groq free-tier rate limit hit — wait a minute and try again."
             )
-        if code == 404:
+        if status == 404:
             raise RecommenderUnavailable(
-                f"Gemini does not recognise the model '{MODEL}'. "
-                "Set GEMINI_MODEL in backend/.env to a model your key can access "
-                "(e.g. gemini-2.5-flash or gemini-2.5-pro)."
+                f"Groq does not recognise the model '{MODEL}'. "
+                "Set GROQ_MODEL in backend/.env to a model your key can access "
+                "(e.g. llama-3.3-70b-versatile or llama-3.1-8b-instant)."
             )
-        raise RecommenderUnavailable(f"Gemini request failed: {e}")
+        raise RecommenderUnavailable(f"Groq request failed: {e}")
 
-    result = getattr(response, "parsed", None)
-    if result is None:
-        # fall back to parsing the JSON text if the SDK didn't hydrate the schema
+    raw_text = response.choices[0].message.content or ""
+
+    try:
+        result = IntakeResult.model_validate_json(raw_text)
+    except Exception:
+        # Try to parse as dict first in case the model wrapped it
         try:
-            result = IntakeResult.model_validate_json(response.text)
+            data = json.loads(raw_text)
+            result = IntakeResult.model_validate(data)
         except Exception:
             raise InvalidRecommendation("The model did not return a parseable recommendation.")
 

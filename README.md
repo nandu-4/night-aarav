@@ -258,8 +258,10 @@ FROM r, p, t;
 | Frontend | React 18, Vite 4, plain CSS |
 | Backend | FastAPI, Python 3.10+ |
 | ORM | SQLAlchemy 2.0 (async) |
-| Database | PostgreSQL (Supabase cloud) |
+| Database | PostgreSQL (Docker local / Supabase cloud) |
 | DB Driver | asyncpg |
+| AI | Groq Cloud (LLaMA 3.3 70B) — recommendations, assistant, transcription |
+| PDF Extraction | pypdf |
 | Validation | Pydantic v2 |
 | State | React Context API (DataContext) |
 | Routing | React Router v6 |
@@ -1059,7 +1061,7 @@ Created `Downloads/nandini-Resume-Intern.tex` for the Caspian (Dunlin.ai) intern
 **Found:** Git 2.51.0 was already installed and configured globally (user `nandini`, email `syamalanandini49@gmail.com`) — so VS Code's Source Control panel was ready; the only missing piece was that this folder wasn't a repository.
 
 **Done:**
-- Created `.gitignore` **before** initializing, covering: `backend/venv/` + `venv_broken/`, `__pycache__/`, **`.env` (holds the Gemini API key — must never be committed)**, `node_modules/`, `frontend/dist/`, `test-results/`, zips.
+- Created `.gitignore` **before** initializing, covering: `backend/venv/` + `venv_broken/`, `__pycache__/`, **`.env` (holds the Groq API key — must never be committed)**, `node_modules/`, `frontend/dist/`, `test-results/`, zips.
 - Ran `git init` — repository created at the project root.
 - Verified with `git check-ignore` that `backend/.env`, `backend/venv`, and `frontend/node_modules` are all ignored.
 
@@ -1109,3 +1111,39 @@ Logins (password `learn123`): employees `r-<code>@skillforge.dev` (e.g. `r-d7204
 ### 2026-08-02 — Question: how to log in to every account
 
 Listed all 20 seeded SkillForge accounts (from Mongo) with the shared default password `learn123`: staff (`admin@` / `manager@` / `lead@skillforge.dev`) + 17 employees as `r-<resource_code>@skillforge.dev` (e.g. Sana Iqbal = `r-d72048@`). Switch accounts via the ⎋ sign-out button. New TN-approved learners get accounts via Admin Console → "Sync employees now". No code changes.
+
+---
+
+### 2026-08-06 — Switched AI provider: Google Gemini → Groq (LLaMA 3.3 70B)
+
+**Asked:** Gemini free tier expired — switch to Groq using a provided API key.
+
+#### 🔁 What changed
+
+| File | Change |
+|---|---|
+| `backend/.env` | `GEMINI_API_KEY` + `GEMINI_MODEL` → `GROQ_API_KEY` + `GROQ_MODEL=llama-3.3-70b-versatile`. Also cleaned up the file — it had 4 duplicate blocks from prior edits; now a single clean block. |
+| `backend/config.py` | Settings fields renamed `gemini_api_key` → `groq_api_key`, `gemini_model` → `groq_model` (default `llama-3.3-70b-versatile`). Dotenv override and startup print statements updated. |
+| `backend/requirements.txt` | `google-genai>=2.0.0` → `groq>=0.9.0` + `pypdf>=4.0.0` (new — see PDF extraction below) |
+| `backend/services/recommender.py` | Rewritten for the **Groq SDK**: `client.chat.completions.create` with `response_format={"type": "json_object"}` (same Pydantic schema — structured output preserved via JSON mode). Guardrails unchanged. Clean 503s for bad key / rate limit / unknown model. |
+| `backend/routers/avathar.py` | `_gemini_chat()` → `_groq_chat()` using Groq SDK with JSON mode. Audio transcription endpoint switched from Gemini multimodal to **Groq Whisper** (`whisper-large-v3`). Circuit breaker, fallback mode, and all guardrails unchanged. |
+| `backend/services/extractor.py` | **PDF extraction rewritten.** Gemini could read raw PDF binary via `Part.from_bytes()`; Groq/LLaMA is text-only. PDFs are now extracted to text via `pypdf` (`PdfReader`), with page-by-page output under `### Page N` headers. All document types (PDF, Excel, CSV, text) now return a unified text block. |
+
+#### 🧠 Model choice: `llama-3.3-70b-versatile`
+
+Best free-tier model on Groq — 128k context window, supports JSON mode, strong instruction following. Override via `GROQ_MODEL` in `.env`.
+
+#### 🔒 What did NOT change
+
+- All guardrails (approved content only, never assign without HIL, no AI deadline authority, full traceability)
+- All Pydantic schemas (`IntakeResult`, `AssistantReply`, etc.)
+- The keyword fallback mode (navigation, tour, filters, approvals work without AI)
+- The frontend — zero changes
+- The SkillForge platform — zero changes
+- Database schema — zero changes
+
+#### ⚠️ Notes
+
+- **PDF quality**: `pypdf` text extraction is good for most documents but may lose complex table layouts that Gemini's native PDF vision handled. Excel/CSV uploads are unaffected and recommended for structured data.
+- **Groq free tier** has generous rate limits (30 req/min, 14,400 req/day for this model) — far more than Gemini's 20/day cap that caused repeated quota exhaustion.
+- The Groq API key was shared in chat — consider rotating it at console.groq.com after the demo.

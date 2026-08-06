@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE assignment_status  AS ENUM ('pending','active','at_risk','overdue','complete','cancelled');
 CREATE TYPE component_status   AS ENUM ('not_started','in_progress','complete','failed');
-CREATE TYPE hil_status         AS ENUM ('pending','approved','modified','rejected');
+CREATE TYPE hil_status         AS ENUM ('draft','pending','approved','modified','rejected');
 CREATE TYPE escalation_status  AS ENUM ('open','resolved_extend','resolved_replace','resolved_accept_risk','closed');
 CREATE TYPE cert_status        AS ENUM ('pending','verified','registered');
 CREATE TYPE log_level          AS ENUM ('info','warning','error','action');
@@ -51,15 +51,16 @@ CREATE TABLE assignments (
     program_id        UUID NOT NULL REFERENCES training_programs(id),
     assigned_date     DATE,
     deadline          DATE NOT NULL,
-    content_status    component_status NOT NULL DEFAULT 'not_started',
-    test_status       component_status NOT NULL DEFAULT 'not_started',
-    case_study_status component_status NOT NULL DEFAULT 'not_started',
-    overall_progress  INTEGER NOT NULL DEFAULT 0,
-    status            assignment_status NOT NULL DEFAULT 'pending',
+    content_status    component_status DEFAULT 'not_started',
+    test_status       component_status DEFAULT 'not_started',
+    case_study_status component_status DEFAULT 'not_started',
+    overall_progress  INTEGER DEFAULT 0,
+    status            assignment_status DEFAULT 'pending',
     test_score        NUMERIC(5,2),
     test_attempts     INTEGER DEFAULT 0,
     case_study_score  NUMERIC(5,2),
     notes             TEXT,
+    learning_state    JSONB,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

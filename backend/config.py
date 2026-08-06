@@ -21,11 +21,19 @@ settings = Settings()
 # key the user pastes into .env.
 try:
     from dotenv import dotenv_values
-    _file_vals = dotenv_values(os.path.join(os.path.dirname(__file__), ".env"))
-    if _file_vals.get("GROQ_API_KEY"):
-        settings.groq_api_key = _file_vals["GROQ_API_KEY"]
-    if _file_vals.get("GROQ_MODEL"):
-        settings.groq_model = _file_vals["GROQ_MODEL"]
+    env_paths = [
+        os.path.join(os.path.dirname(__file__), ".env"),
+        os.path.join(os.path.dirname(__file__), "..", ".env"),
+    ]
+    for p in env_paths:
+        if os.path.exists(p):
+            _file_vals = dotenv_values(p)
+            if _file_vals.get("GROQ_API_KEY"):
+                settings.groq_api_key = _file_vals["GROQ_API_KEY"]
+            if _file_vals.get("GROQ_MODEL"):
+                settings.groq_model = _file_vals["GROQ_MODEL"]
+            if _file_vals.get("DATABASE_URL"):
+                settings.database_url = _file_vals["DATABASE_URL"]
 except ImportError:
     pass
 

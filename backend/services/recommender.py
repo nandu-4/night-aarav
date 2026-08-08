@@ -132,8 +132,50 @@ RULES — these are absolute:
    per person. If it describes one person, return exactly one candidate.
 
 All output is in English.
+"""
 
-IMPORTANT: Your response must be a valid JSON object matching the IntakeResult schema.\
+# The model only reliably matches the schema when it can SEE the schema —
+# "match the IntakeResult schema" alone made LLaMA invent its own field names.
+OUTPUT_FORMAT = """\
+OUTPUT FORMAT — respond with a single JSON object of EXACTLY this structure
+(every field shown is required; use "" or [] when unknown, never omit a key):
+
+{
+  "document_summary": "1-2 sentences describing the uploaded document",
+  "document_kind": "skill_gap_record | resume | assessment_report | roster | other",
+  "candidates": [
+    {
+      "learner": {
+        "full_name": "person's name",
+        "role": "their role or \\"\\"",
+        "department": "their department or \\"\\"",
+        "email": "their email or \\"\\"",
+        "resource_code": "existing code like R-1042 if the document states one, else \\"\\"",
+        "current_skills": ["skill", "..."],
+        "gap_skills": ["missing skill", "..."],
+        "proficiency_target": "target level or outcome",
+        "cert_authority": "required certifying body or \\"\\""
+      },
+      "gap_explanation": "plain-English gap description",
+      "recommended": {
+        "catalogue_program_id": "id copied VERBATIM from the catalogue",
+        "program_name": "catalogue program name",
+        "cert_name": "certification name",
+        "modules": [{"title": "module title", "hours": 3, "objective": "one sentence"}],
+        "test_question_count": 10,
+        "case_study_title": "sandbox task title",
+        "case_study_brief": "what the learner must produce, 1-2 sentences",
+        "total_duration_h": 12,
+        "rationale": "why this program fits this learner",
+        "confidence": 82
+      },
+      "alternatives": []
+    }
+  ]
+}
+
+"alternatives" is a list of the same program-option shape as "recommended" (may be empty).
+"confidence" is an integer 0-100. Do not add extra keys, comments, or markdown.\
 """
 
 
@@ -205,58 +247,78 @@ def recommend(document_block: dict, catalogue: list[dict], question_bank_size: i
     """
     client = _client()
     document_text = _document_to_text(document_block)
-    system_prompt = SYSTEM_RULES + "\n\n" + _catalogue_prompt(catalogue, question_bank_size)
+    system_prompt = (
+        SYSTEM_RULES + "\n\n" + OUTPUT_FORMAT + "\n\n"
+        + _catalogue_prompt(catalogue, question_bank_size)
+    )
 
     user_message = (
         document_text + "\n\n"
         "Read this document. Identify every person with a skill gap, and "
         "propose a personalised training program for each, drawn only from "
         "the approved catalogue.\n\n"
-        "Respond with a JSON object matching the IntakeResult schema."
+        "Respond with a JSON object in exactly the OUTPUT FORMAT above."
     )
 
-    try:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3,
-            max_tokens=8000,
-        )
-    except GroqAPIError as e:
-        status = getattr(e, "status_code", None)
-        if status in (401, 403):
-            raise RecommenderUnavailable(
-                "Groq rejected the API key. Check GROQ_API_KEY in backend/.env."
-            )
-        if status == 429:
-            raise RecommenderUnavailable(
-                "Groq free-tier rate limit hit — wait a minute and try again."
-            )
-        if status == 404:
-            raise RecommenderUnavailable(
-                f"Groq does not recognise the model '{MODEL}'. "
-                "Set GROQ_MODEL in backend/.env to a model your key can access "
-                "(e.g. llama-3.3-70b-versatile or llama-3.1-8b-instant)."
-            )
-        raise RecommenderUnavailable(f"Groq request failed: {e}")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
 
-    raw_text = response.choices[0].message.content or ""
-
-    try:
-        result = IntakeResult.model_validate_json(raw_text)
-    except Exception:
-        # Try to parse as dict first in case the model wrapped it
+    # Two attempts: if the first response fails validation, show the model its
+    # own output and the validation errors and ask it to re-emit correct JSON.
+    last_error = ""
+    for attempt in (1, 2):
         try:
-            data = json.loads(raw_text)
-            result = IntakeResult.model_validate(data)
-        except Exception:
-            raise InvalidRecommendation("The model did not return a parseable recommendation.")
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.3,
+                max_tokens=8000,
+            )
+        except GroqAPIError as e:
+            status = getattr(e, "status_code", None)
+            if status in (401, 403):
+                raise RecommenderUnavailable(
+                    "Groq rejected the API key. Check GROQ_API_KEY in backend/.env."
+                )
+            if status == 429:
+                raise RecommenderUnavailable(
+                    "Groq free-tier rate limit hit — wait a minute and try again."
+                )
+            if status == 404:
+                raise RecommenderUnavailable(
+                    f"Groq does not recognise the model '{MODEL}'. "
+                    "Set GROQ_MODEL in backend/.env to a model your key can access "
+                    "(e.g. llama-3.3-70b-versatile or llama-3.1-8b-instant)."
+                )
+            raise RecommenderUnavailable(f"Groq request failed: {e}")
 
-    return result
+        raw_text = response.choices[0].message.content or ""
+
+        try:
+            return IntakeResult.model_validate_json(raw_text)
+        except Exception:
+            try:
+                return IntakeResult.model_validate(json.loads(raw_text))
+            except Exception as e:
+                last_error = str(e)[:1500]
+                print(f"[RECOMMENDER] attempt {attempt} failed validation: {last_error[:300]}")
+                if attempt == 1:
+                    messages.append({"role": "assistant", "content": raw_text[:6000]})
+                    messages.append({"role": "user", "content": (
+                        "That JSON does not match the required OUTPUT FORMAT. "
+                        "Validation errors:\n" + last_error + "\n\n"
+                        "Re-emit the full response as a single JSON object in exactly "
+                        "the OUTPUT FORMAT — same data, corrected structure. "
+                        "Every required key must be present."
+                    )})
+
+    raise InvalidRecommendation(
+        "The model did not return a parseable recommendation after a retry. "
+        f"Last validation error: {last_error[:400]}"
+    )
 
 
 def validate_against_catalogue(result: IntakeResult, approved_ids: set[str]) -> list[str]:

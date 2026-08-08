@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import assignments, hil, escalations, certifications, audit, analytics, intake, programs, learning, avathar, meetings
+from routers import assignments, hil, escalations, certifications, audit, analytics, intake, programs, learning, avathar, meetings, ownbot
 
 app = FastAPI(title="Avathar — Talent Nurturing API", version="3.0.0")
 
@@ -24,6 +24,7 @@ app.include_router(programs.router)
 app.include_router(learning.router)
 app.include_router(avathar.router)
 app.include_router(meetings.router)
+app.include_router(ownbot.router)
 
 @app.get("/")
 async def root():

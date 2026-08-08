@@ -226,6 +226,32 @@ export default function AvatharAssistant({ role, openScreen, refreshData }) {
       setPending(null); // new command replaces the pending one
     }
 
+    // meeting-bot controls — handled locally, not by the AI brain
+    if (/^(stop|end|leave|delete|kill)( the)?( meeting)?( bot| call| meeting)?$/i.test(text) ||
+        /\b(stop|end|leave)\b.*\b(bot|meeting|call)\b/i.test(text)) {
+      try {
+        const s = await api.ownBotStatus();
+        if (s.running) {
+          await api.stopOwnBot();
+          reply('Done — I left the meeting and closed the bot window.');
+        } else {
+          reply("There's no meeting bot running right now.");
+        }
+      } catch {
+        reply("I couldn't reach the backend to check the bot.");
+      }
+      return;
+    }
+    if (/\b(bot|meeting) status\b|\bis the bot (running|in)\b/i.test(text)) {
+      try {
+        const s = await api.ownBotStatus();
+        reply(s.running ? `The bot is ${s.status}.` : "No meeting bot is running.");
+      } catch {
+        reply("I couldn't reach the backend to check the bot.");
+      }
+      return;
+    }
+
     setState('thinking');
     try {
       // conversation memory: the panel's own transcript, oldest → newest
@@ -491,12 +517,25 @@ export default function AvatharAssistant({ role, openScreen, refreshData }) {
     const url = window.prompt('Paste a Microsoft Teams / Google Meet / Zoom link for Aarav to join and present:');
     if (!url) return;
     setState('thinking');
+    // Primary: our own self-hosted bot (free — Chrome on this machine joins as
+    // Aarav). Fallback: the AgentCall cloud bot, if it's configured & funded.
+    try {
+      const res = await api.startOwnBot(url);
+      reply(`I'm joining as ${res.bot_name} in a Chrome window on this machine — admit me from the meeting lobby, then say "Aarav, give us a tour".`);
+      return;
+    } catch (e) {
+      push({ who: 'av', text: `Own bot: ${e.message} — trying the cloud bot…` });
+    }
     try {
       const res = await api.startMeeting(url);
       reply(`I'm joining the meeting as ${res.bot_name} — I'll appear on camera and share the app.`);
     } catch (e) {
-      reply('Meeting mode is not configured yet.');
-      push({ who: 'av', text: e.message });
+      const msg = e.message || 'the backend did not respond';
+      if (/AGENTCALL_API_KEY|AVATHAR_PUBLIC_URL|tunnel/i.test(msg)) {
+        reply('Meeting mode needs setup. ' + msg);
+      } else {
+        reply("I couldn't join the meeting. " + msg);
+      }
       setState(micOnRef.current ? 'listening' : 'idle');
     }
   };

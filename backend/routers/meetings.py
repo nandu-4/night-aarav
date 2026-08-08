@@ -142,6 +142,34 @@ async def start_meeting(payload: StartMeetingRequest, db: AsyncSession = Depends
         )
 
     base = settings.avathar_public_url.rstrip("/")
+
+    # Pre-flight: the bot can only render the avatar cam / screenshare if the
+    # tunnel is actually up. Quick-tunnel URLs die on every restart — catch
+    # that here with a clear message instead of a confusing provider error.
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+            probe = await client.get(base)
+        if probe.status_code >= 500:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"The public tunnel {base} answered with HTTP {probe.status_code}. "
+                    "Restart your tunnel (e.g. `cloudflared tunnel --url http://localhost:5180`) "
+                    "and update AVATHAR_PUBLIC_URL in backend/.env, then restart the backend."
+                ),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"The public tunnel {base} is unreachable — it has probably expired. "
+                "Start a fresh one (e.g. `cloudflared tunnel --url http://localhost:5180`), "
+                "put the new URL in AVATHAR_PUBLIC_URL in backend/.env, and restart the backend."
+            ),
+        )
+
     snapshot = await _snapshot(db)
     context = (
         f"You are {payload.bot_name}, the AI assistant inside the 'Talent Nurturing' application, "
@@ -169,6 +197,20 @@ async def start_meeting(payload: StartMeetingRequest, db: AsyncSession = Depends
     }
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(f"{AGENTCALL_BASE}/calls", json=body, headers=headers)
+    if resp.status_code == 402:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Your AgentCall account is out of credits, so the bot cannot join calls. "
+                "Top up at app.agentcall.dev/add-credits. Free alternative: join the meeting "
+                "yourself, share your screen with computer sound, and ask Aarav for a tour."
+            ),
+        )
+    if resp.status_code in (401, 403):
+        raise HTTPException(
+            status_code=502,
+            detail="AgentCall rejected the API key — check AGENTCALL_API_KEY in backend/.env.",
+        )
     if resp.status_code not in (200, 201):
         raise HTTPException(status_code=502, detail=f"AgentCall refused the call ({resp.status_code}): {resp.text[:300]}")
     data = resp.json()

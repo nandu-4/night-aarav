@@ -5,8 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    // allow access through the cloudflared tunnel (Aarav meeting mode)
-    allowedHosts: ['.trycloudflare.com'],
+    // allow access through public tunnels (Aarav meeting mode) — cloudflared,
+    // localtunnel and ngrok all need to reach this dev server
+    allowedHosts: ['.trycloudflare.com', '.loca.lt', '.ngrok.app', '.ngrok-free.app'],
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

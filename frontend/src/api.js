@@ -1,30 +1,28 @@
 const BASE = '/api';
 
-const get = (path) =>
-  fetch(BASE + path).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  });
+/* Every helper surfaces the backend's `detail` message on failure, so the UI
+   (and Aarav's spoken errors) show the real reason, not just "HTTP 503". */
+const parse = async (r) => {
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+  return data;
+};
+
+const get = (path) => fetch(BASE + path).then(parse);
 
 const post = (path, body) =>
   fetch(BASE + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  });
+  }).then(parse);
 
 const patch = (path, body) =>
   fetch(BASE + path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  });
+  }).then(parse);
 
 const upload = (path, formData) =>
   fetch(BASE + path, { method: 'POST', body: formData }).then(async (r) => {
@@ -84,8 +82,14 @@ export const api = {
     return upload('/avathar/transcribe', fd);
   },
   meetings: () => get('/meetings'),
-  startMeeting: (meet_url) => post('/meetings/start', { meet_url }),
+  startMeeting: (meet_url) => post('/meetings/start', { meet_url }),   // AgentCall (paid)
   presentState: () => get('/meetings/present-state'),
+
+  // ── self-hosted meeting bot (free — Playwright + Edge TTS + Groq Whisper) ──
+  startOwnBot: (meet_url) => post('/ownbot/start', { meet_url }),
+  ownBotStatus: () => get('/ownbot/status'),
+  ownBotShare: () => post('/ownbot/share', {}),
+  stopOwnBot: () => fetch('/api/ownbot', { method: 'DELETE' }).then((r) => r.json()),
 
   // ── Learning platform (Resource) ──
   learners: () => get('/learning/resources'),
